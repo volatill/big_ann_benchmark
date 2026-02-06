@@ -1,0 +1,46 @@
+# big-ann-benchmarks/install/Dockerfile.lsmvec
+FROM billion-scale-benchmark
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git pkg-config python3-dev \
+    libzstd-dev libsnappy-dev liblz4-dev libbz2-dev zlib1g-dev \
+    libjemalloc-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Put benchmark repo at a single canonical root inside the image
+WORKDIR /home/app
+
+# If your base image does NOT already contain neurips23, copy it in.
+# (Build context should be the repo root when you docker build.)
+COPY neurips23 /home/app/neurips23
+
+# Make /code also work (some runners/images assume /code)
+RUN ln -snf /home/app /code
+
+# Build LSM-Vec
+WORKDIR /opt
+RUN git clone --recursive https://github.com/NTU-Siqiang-Group/LSM-Vec.git lsmvec
+
+WORKDIR /opt/lsmvec
+RUN git submodule update --init --recursive \
+ && make aster \
+ && cmake -S . -B build -DLSMVEC_BUILD_PYTHON=ON -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build build -j"$(nproc)" \
+ && python3 -c "import sys; sys.path.insert(0,'/opt/lsmvec/build/python'); import lsm_vec; print('lsm_vec import OK')"
+
+ENV PYTHONPATH=/home/app:/opt/lsmvec/build/python:${PYTHONPATH}
+ENV LD_LIBRARY_PATH=/opt/lsmvec/build/lib:/opt/lsmvec/build/aster/lib:${LD_LIBRARY_PATH}
+
+WORKDIR /home/app
+
+
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
+ENV VECLIB_MAXIMUM_THREADS=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONFAULTHANDLER=1
+
