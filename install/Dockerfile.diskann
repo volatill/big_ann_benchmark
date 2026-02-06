@@ -1,29 +1,48 @@
 FROM billion-scale-benchmark
 
-RUN apt-get update
-RUN apt-get install -y wget git cmake g++ libaio-dev libgoogle-perftools-dev clang-format libboost-dev python3 python3-setuptools python3-pip
-RUN pip3 install pybind11 numpy
+ENV DEBIAN_FRONTEND=noninteractive
 
-RUN cd /tmp && wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB
-RUN cd /tmp && apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB
-RUN cd /tmp && rm GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB
-RUN cd /tmp && sh -c 'echo deb https://apt.repos.intel.com/mkl all main > /etc/apt/sources.list.d/intel-mkl.list'
-RUN apt-get update
-RUN apt-get install -y intel-mkl-64bit-2020.0-088
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates gnupg wget \
+    git cmake g++ \
+    libaio-dev libaio1 numactl libgomp1 \
+    python3 python3-pip python3-setuptools \
+    libtcmalloc-minimal4 \
+ && rm -rf /var/lib/apt/lists/*
 
-RUN update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so     libblas.so-x86_64-linux-gnu      /opt/intel/mkl/lib/intel64/libmkl_rt.so 150
-RUN update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3   libblas.so.3-x86_64-linux-gnu    /opt/intel/mkl/lib/intel64/libmkl_rt.so 150
-RUN update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so   liblapack.so-x86_64-linux-gnu    /opt/intel/mkl/lib/intel64/libmkl_rt.so 150
-RUN update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 liblapack.so.3-x86_64-linux-gnu  /opt/intel/mkl/lib/intel64/libmkl_rt.so 150
+# 防止基础镜像强制 preload 其他 allocator
+RUN if [ -f /etc/ld.so.preload ]; then rm -f /etc/ld.so.preload; fi
 
-RUN echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf
-RUN echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf
-RUN ldconfig
-RUN echo "MKL_THREADING_LAYER=GNU" >> /etc/environment
+# Intel oneAPI APT repo key（更稳的 key 地址）
+RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+  | gpg --dearmor -o /usr/share/keyrings/oneapi-keyring.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/oneapi-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+  > /etc/apt/sources.list.d/oneapi.list
 
-RUN git clone --single-branch --branch python_bindings_diskann https://github.com/microsoft/diskann
-RUN mkdir -p diskann/build
-RUN cd diskann/build && cmake -DCMAKE_BUILD_TYPE=Release ..
-RUN cd diskann/build && make -j
-RUN cd diskann/python && pip install -e .
-RUN python3 -c 'import diskannpy'
+# oneAPI runtime libs（提供 MKL 运行时 so）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    intel-oneapi-runtime-libs \
+ && rm -rf /var/lib/apt/lists/*
+
+# oneAPI 库路径
+ENV LD_LIBRARY_PATH=/opt/intel/oneapi/mkl/latest/lib/intel64:/opt/intel/oneapi/compiler/latest/linux/compiler/lib/intel64_lin
+ENV MKL_THREADING_LAYER=GNU
+
+# 关键：让全进程统一用 tcmalloc，避免 malloc/free 混用
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4
+
+RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel \
+ && python3 -m pip install --no-cache-dir "numpy==1.26.4" "scipy==1.10.1" \
+ && python3 -m pip install --no-cache-dir "diskannpy==0.5.0"
+
+ENV OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1
+
+# 自检
+RUN ldconfig \
+ && python3 -c "import diskannpy; print('diskannpy import ok')"

@@ -9,6 +9,26 @@ any:
           args: [[1024,2048,4096,8192]]
           query-args: [[1, 5, 10, 50, 100, 200]]
 random-range-xs:
+    lsmvec:
+      docker-tag: billion-scale-benchmark-lsmvec
+      module: benchmark.algorithms.lsmvec.module
+      constructor: LsmVec
+      base-args: ["@metric"]
+      run-groups:
+        base:
+          args: |
+            [
+              {
+                "enable_stats": false
+              }
+            ]
+          query-args: |
+            [
+              { "ef_search": 32 },
+              { "ef_search": 64 },
+              { "ef_search": 128 },
+              { "ef_search": 256 }
+            ]
     kota-t2:
       docker-tag: billion-scale-benchmark-kota
       module: benchmark.algorithms.kota-t2
@@ -131,6 +151,26 @@ random-s:
               "nprobe=4,quantizer_efSearch=4",
               "nprobe=2,quantizer_efSearch=16"]
 random-xs:
+    lsmvec:
+      docker-tag: billion-scale-benchmark-lsmvec
+      module: benchmark.algorithms.lsmvec.module
+      constructor: LsmVec
+      base-args: ["@metric"]
+      run-groups:
+        base:
+          args: |
+            [
+              {
+                "enable_stats": false
+              }
+            ]
+          query-args: |
+            [
+              { "ef_search": 32 },
+              { "ef_search": 64 },
+              { "ef_search": 128 },
+              { "ef_search": 256 }
+            ]
     kst_ann_t1:
       docker-tag: billion-scale-benchmark-kst_ann_t1
       module: benchmark.algorithms.kst_t1
@@ -341,7 +381,7 @@ deep-10M:
       run-groups:
         base:
           args: |
-              [{"R":100, "L":100, "B":0.3, "M":15}]
+              [{"R":32, "L":32, "B":0.0001, "M":1, "PQ":10, "C":0, "CM":0}]
           query-args: |
               [{"Ls":50, "BW":4, "T":16}]
 deep-1B:
